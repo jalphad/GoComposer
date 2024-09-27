@@ -40,3 +40,6 @@ coverage.out
 # Editor backup files
 *~
 *.swp
+
+# Direnv
+.direnv/
