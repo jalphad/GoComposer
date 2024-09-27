@@ -1,4 +1,4 @@
-module github.com/jalphad/GoComposer.git
+module github.com/jalphad/gocomposer
 
 go 1.22.7
 

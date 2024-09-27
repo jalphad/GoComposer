@@ -3,7 +3,7 @@ package composer
 import (
 	"errors"
 	"fmt"
-	"github.com/jalphad/GoComposer.git/types"
+	"github.com/jalphad/gocomposer/types"
 )
 
 func New[I, O any](opts ...Option[I, O]) *Composer[I, O] {

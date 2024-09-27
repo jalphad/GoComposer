@@ -3,10 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	composer "github.com/jalphad/gocomposer"
 	"log"
 	"strconv"
-
-	"github.com/jalphad/GoComposer.git"
 )
 
 func main() {
@@ -21,15 +20,21 @@ func main() {
 	}
 	fmt.Println(f(8))
 
-	f2 := composer.New[string, string](
-		composer.WithErrFn[string, string]("Atoi", strconv.Atoi),
-		composer.WithFn[string, string]("double", composer.Wrap(logVal, double)),
-		composer.WithFn[string, string]("Itoa", strconv.Itoa)).MustComposeNoErr(false)
-	fmt.Println(f2("2"))
+	css := composer.New[string, string]()
+	composer.New[string, string](
+		composer.WithErrFn(css, "Atoi", strconv.Atoi),
+		composer.WithFn(css, "double", composer.Wrap(logVal, double)),
+		composer.WithFn(css, "Itoa", strconv.Itoa)).
+		MustComposeNoErr(false)("2")
 }
 
-func addOne(n int) int { return n + 1 }
-func double(n int) int { return int(n) * 2 }
+func addOne(n int) int      { return n + 1 }
+func double(n int) int      { return int(n) * 2 }
+func toString(n int) string { return strconv.Itoa(n) }
+func errFunc[T any](n T) (T, error) {
+	return n, errors.New("an error occurred")
+}
+
 func logVal[T any](f func(T) T) func(T) T {
 	return func(t T) T {
 		log.Println("value before: ", t)
@@ -37,8 +42,4 @@ func logVal[T any](f func(T) T) func(T) T {
 		t = f(t)
 		return t
 	}
-}
-func toString(n int) string { return strconv.Itoa(n) }
-func errFunc[T any](n T) (T, error) {
-	return n, errors.New("an error occurred")
 }
