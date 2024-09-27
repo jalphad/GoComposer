@@ -11,15 +11,21 @@ import (
 
 func main() {
 	c := composer.New[int, string]()
-	composer.WithFn(c, "addOne", composer.Wrap(logVal, addOne))
-	composer.WithFn(c, "double", double)
-	composer.WithErrFn(c, "error", errFunc[int])
-	composer.WithFn(c, "toString", toString)
+	composer.AddFn(c, "addOne", composer.Wrap(logVal, addOne))
+	composer.AddFn(c, "double", double)
+	composer.AddErrFn(c, "error", errFunc[int])
+	composer.AddFn(c, "toString", toString)
 	f, err := c.Compose()
 	if err != nil {
 		log.Fatal("functions failed to compose")
 	}
-	fmt.Print(f(8))
+	fmt.Println(f(8))
+
+	f2 := composer.New[string, string](
+		composer.WithErrFn[string, string]("Atoi", strconv.Atoi),
+		composer.WithFn[string, string]("double", composer.Wrap(logVal, double)),
+		composer.WithFn[string, string]("Itoa", strconv.Itoa)).MustComposeNoErr(false)
+	fmt.Println(f2("2"))
 }
 
 func addOne(n int) int { return n + 1 }
