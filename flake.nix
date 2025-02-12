@@ -22,6 +22,7 @@
             stdenv
             glibc.static
             delve
+            gcc
             go
             gotools
             gopls
