@@ -3,6 +3,7 @@ package workflows
 import (
 	"errors"
 	"fmt"
+
 	"github.com/jalphad/gocomposer/types"
 )
 
@@ -20,6 +21,10 @@ type Composer[I, O any] struct {
 	outputFn     func() (O, error)
 	result       func(I) (O, error)
 	errs         []error
+}
+
+func (c *Composer[I, O]) Input() Dependency[I] {
+	return workflowInput[I](Input)
 }
 
 func (c *Composer[I, O]) Compose() (func(I) (O, error), error) {

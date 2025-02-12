@@ -6,9 +6,9 @@ import (
 	"github.com/jalphad/gocomposer/types"
 )
 
-func AddFn[I, O, R, S any](c *Composer[I, O], f func(R) (S, error), opts *FnOpts[R]) *Dependency[S] {
+func AddFn[I, O, R, S any](c *Composer[I, O], f func(R) (S, error), opts *FnOpts[R]) Dependency[S] {
 	opts = setOpts(c, opts)
-	if _, ok := opts.DependsOn.(WorkflowInput); ok {
+	if _, ok := opts.DependsOn.(workflowInput[R]); ok {
 		this := &taskInputFn[I, O, S]{
 			wf:   c,
 			name: opts.Name,
@@ -23,7 +23,7 @@ func AddFn[I, O, R, S any](c *Composer[I, O], f func(R) (S, error), opts *FnOpts
 		this.pub = setPub[I, O, S](c, opts.Name)
 		c.tasks = append(c.tasks, this)
 
-		return &Dependency[S]{name: this.name}
+		return &dependency[S]{name: this.name}
 	}
 	this := &taskFn[I, O, R, S]{
 		wf:   c,
@@ -36,23 +36,23 @@ func AddFn[I, O, R, S any](c *Composer[I, O], f func(R) (S, error), opts *FnOpts
 	this.pub = setPub[I, O, S](c, opts.Name)
 	c.tasks = append(c.tasks, this)
 
-	return &Dependency[S]{name: this.name}
+	return &dependency[S]{name: this.name}
 }
 
-func NewFnOpts[O any](dependsOn *Dependency[O]) *FnOpts[O] {
+func NewFnOpts[O any](dependsOn Dependency[O]) *FnOpts[O] {
 	return &FnOpts[O]{DependsOn: dependsOn}
 }
 
 type FnOpts[O any] struct {
 	Name      string
-	DependsOn iDependency[O]
+	DependsOn Dependency[O]
 }
 
 func setOpts[I, O, S any](c *Composer[I, O], o *FnOpts[S]) *FnOpts[S] {
 	if o == nil {
 		return &FnOpts[S]{
 			Name:      fmt.Sprintf("Task%d", len(c.tasks)+1),
-			DependsOn: Input,
+			DependsOn: workflowInput[S](Input),
 		}
 	}
 	if o.Name == "" {
