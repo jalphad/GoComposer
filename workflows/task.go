@@ -5,7 +5,17 @@ type Task interface {
 	compose() error
 }
 
-type Dependency[I any] interface {
+type Dependency[O any] struct {
+	name string
+}
+
+func (d *Dependency[O]) isDependency() {}
+
+func (d *Dependency[O]) Name() string {
+	return d.name
+}
+
+type iDependency[I any] interface {
 	Name() string
 	isDependency()
 }
