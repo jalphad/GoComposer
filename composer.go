@@ -3,6 +3,7 @@ package composer
 import (
 	"errors"
 	"fmt"
+
 	"github.com/jalphad/gocomposer/types"
 )
 
