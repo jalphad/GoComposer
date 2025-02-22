@@ -10,12 +10,12 @@ import (
 
 func main() {
 	w := workflows.NewComposer[int, string]()
-	t1 := workflows.AddFn(w, ToErrFn(strconv.Itoa), nil)
-	t2 := workflows.AddFn(w, ToErrFn(IgnoreInt), nil)
-	t3 := workflows.AddBiFn(w, Combine2Strings, t1, t2)
-	t4 := workflows.AddFn(w, ToErrFn(DuplicateString), t3)
-	t5 := workflows.AddFn(w, ToErrFn(AddBar), t4)
-	workflows.AddFn(w, ToErrFn(AddBar), t5)
+	t1 := workflows.Fn(w, ToErrFn(strconv.Itoa)).Add()
+	t2 := workflows.Fn(w, ToErrFn(IgnoreInt)).Add()
+	t3 := workflows.BiFn(w, Combine2Strings).Params(t1, t2).Add()
+	t4 := workflows.Fn(w, ToErrFn(DuplicateString)).Param(t3).Add()
+	t5 := workflows.Fn(w, ToErrFn(AddBar)).Param(t4).Add()
+	workflows.Fn(w, ToErrFn(AddBar)).Param(t5).Add()
 	//workflows.AddFn(w, strconv.Atoi, &workflows.FnOpts{Name: "t5", DependsOn: t3.Name()})
 	fn, err := TimeCompose(w)
 	if err != nil {
