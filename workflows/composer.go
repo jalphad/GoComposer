@@ -1,96 +1,30 @@
 package workflows
 
 import (
-	"errors"
-	"fmt"
-
-	"github.com/jalphad/gocomposer/types"
+	"github.com/jalphad/gocomposer/workflows/internal/composer"
+	"github.com/jalphad/gocomposer/workflows/internal/functions"
+	"github.com/jalphad/gocomposer/workflows/internal/task"
 )
 
-func NewComposer[I, O any]() *Composer[I, O] {
-	return &Composer[I, O]{
-		pubs: make(map[string]pub),
-	}
+type (
+	Composer[I, O any] = composer.Composer[I, O]
+)
+
+func NewComposer[I, O any]() Composer[I, O] {
+	return composer.NewSimpleWorkflow[I, O]()
 }
 
-type Composer[I, O any] struct {
-	tasks        []Task
-	pubs         map[string]pub
-	inputFns     []func(I) error
-	transformFns []func() error
-	outputFn     func() (O, error)
-	result       func(I) (O, error)
-	errs         []error
+func AddFn[I, O, R, S any](c composer.Composer[I, O], f func(R) (S, error), d task.Dependency[R]) task.Dependency[S] {
+	opts := &functions.FnOpts[R]{
+		Input: d,
+	}
+	return functions.AddFn(c, f, opts)
 }
 
-func (c *Composer[I, O]) Input() Dependency[I] {
-	return workflowInput[I](Input)
-}
-
-func (c *Composer[I, O]) Compose() (func(I) (O, error), error) {
-	if c.errs != nil {
-		return nil, errors.Join(c.errs...)
+func AddBiFn[I, O, Q, R, S any](c composer.Composer[I, O], f func(Q, R) (S, error), d1 task.Dependency[Q], d2 task.Dependency[R]) task.Dependency[S] {
+	opts := &functions.BiFnOpts[Q, R]{
+		Input1: d1,
+		Input2: d2,
 	}
-	err := compose(c)
-	if err != nil {
-		return nil, err
-	}
-	if c.result == nil {
-		return nil, fmt.Errorf("%w: resulting function is nil", types.ErrCompose)
-	}
-
-	return c.result, nil
-}
-
-func compose[I, O any](c *Composer[I, O]) error {
-	if c == nil {
-		return fmt.Errorf("%w: composer cannot be nil", types.ErrInvalidArgument)
-	}
-	var (
-		err error
-	)
-	for k, v := range c.pubs {
-		if !v.hasPublisher() {
-			return fmt.Errorf("%w: task %s is not found", types.ErrCompose, k)
-		}
-	}
-	for _, info := range c.tasks {
-		err = info.compose()
-		if err != nil {
-			return err
-		}
-	}
-	for k, v := range c.pubs {
-		var outputTasks = make([]string, 0, 1)
-		if !v.isConsumed() {
-			outputTasks = append(outputTasks, k)
-		}
-		if len(outputTasks) > 1 {
-			return fmt.Errorf("%w: multiple outputs %v", types.ErrCompose, outputTasks)
-		}
-	}
-	c.result = createOutputFn[I, O](c)
-	return nil
-}
-
-func createOutputFn[I, O any](c *Composer[I, O]) func(I) (O, error) {
-	return func(s I) (O, error) {
-		var (
-			o   O
-			err error
-		)
-		for _, consumer := range c.inputFns {
-			err = consumer(s)
-			if err != nil {
-				return o, err
-			}
-		}
-		for _, intermediate := range c.transformFns {
-			err = intermediate()
-			if err != nil {
-				return o, err
-			}
-		}
-		return c.outputFn()
-	}
+	return functions.AddBiFn(c, f, opts)
 }

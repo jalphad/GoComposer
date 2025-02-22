@@ -1,71 +1,73 @@
-package workflows
+package functions
 
 import (
 	"fmt"
 
 	"github.com/jalphad/gocomposer/types"
+	"github.com/jalphad/gocomposer/workflows/internal/composer"
+	"github.com/jalphad/gocomposer/workflows/internal/task"
 )
 
-func AddFn[I, O, R, S any](c *Composer[I, O], f func(R) (S, error), opts *FnOpts[R]) Dependency[S] {
-	opts = setOpts(c, opts)
-	if _, ok := opts.DependsOn.(workflowInput[R]); ok {
+func AddFn[I, O, R, S any](c composer.Composer[I, O], f func(R) (S, error), opts *FnOpts[R]) task.Dependency[S] {
+	swf := c.(*composer.SimpleWorkflow[I, O])
+	opts = setOpts(swf, opts)
+	if _, ok := opts.Input.(task.WorkflowInput[R]); ok {
 		this := &taskInputFn[I, O, S]{
-			wf:   c,
+			wf:   swf,
 			name: opts.Name,
 		}
 		if fi, ok := any(f).(func(I) (S, error)); ok {
 			this.f = fi
 		} else {
 			var dummy func(I) S
-			c.errs = append(c.errs, fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
+			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
 		}
 
-		this.pub = setPub[I, O, S](c, opts.Name)
-		c.tasks = append(c.tasks, this)
+		this.pub = composer.SetPub[I, O, S](swf, opts.Name)
+		swf.AddTask(this)
 
-		return &dependency[S]{name: this.name}
+		return (&task.TaskDependency[S]{}).SetName(this.name)
 	}
 	this := &taskFn[I, O, R, S]{
-		wf:   c,
+		wf:   swf,
 		f:    f,
 		name: opts.Name,
 	}
 	subCh := make(chan R, 1)
-	addSub(c, opts.DependsOn.Name(), subCh)
+	composer.AddSub(swf, opts.Input.Name(), subCh)
 	this.sub = subCh
-	this.pub = setPub[I, O, S](c, opts.Name)
-	c.tasks = append(c.tasks, this)
+	this.pub = composer.SetPub[I, O, S](swf, opts.Name)
+	swf.AddTask(this)
 
-	return &dependency[S]{name: this.name}
+	return (&task.TaskDependency[S]{}).SetName(this.name)
 }
 
-func NewFnOpts[O any](dependsOn Dependency[O]) *FnOpts[O] {
-	return &FnOpts[O]{DependsOn: dependsOn}
+type FnOpts[R any] struct {
+	Name  string
+	Input task.Dependency[R]
 }
 
-type FnOpts[O any] struct {
-	Name      string
-	DependsOn Dependency[O]
-}
-
-func setOpts[I, O, S any](c *Composer[I, O], o *FnOpts[S]) *FnOpts[S] {
+func setOpts[I, O, R any](c *composer.SimpleWorkflow[I, O], o *FnOpts[R]) *FnOpts[R] {
 	if o == nil {
-		return &FnOpts[S]{
-			Name:      fmt.Sprintf("Task%d", len(c.tasks)+1),
-			DependsOn: workflowInput[S](Input),
+		return &FnOpts[R]{
+			Name:  fmt.Sprintf("Task%d", len(c.Tasks)+1),
+			Input: task.WorkflowInput[R](task.Input),
 		}
 	}
 	if o.Name == "" {
-		o.Name = fmt.Sprintf("Task%d", len(c.tasks)+1)
+		o.Name = fmt.Sprintf("Task%d", len(c.Tasks)+1)
+	}
+	if o.Input == nil {
+		o.Input = task.WorkflowInput[R](task.Input)
 	}
 	return o
 }
 
 type taskFn[I, O, R, S any] struct {
 	name string
-	wf   *Composer[I, O]
+	wf   *composer.SimpleWorkflow[I, O]
 	f    func(R) (S, error)
-	pub  *pubImpl[S]
+	pub  *composer.PubImpl[S]
 	sub  <-chan R
 }
 
@@ -73,15 +75,15 @@ func (t *taskFn[I, O, R, S]) Name() string {
 	return t.name
 }
 
-func (t *taskFn[I, O, R, S]) compose() error {
+func (t *taskFn[I, O, R, S]) Compose() error {
 	if t.f != nil {
-		if t.sub != nil && len(t.pub.channels) != 0 {
-			t.wf.transformFns = append(t.wf.transformFns, func() error {
+		if t.sub != nil && len(t.pub.Channels) != 0 {
+			t.wf.AddTransformFn(func() error {
 				res, err := t.f(<-t.sub)
 				if err != nil {
 					return err
 				}
-				for _, ch := range t.pub.channels {
+				for _, ch := range t.pub.Channels {
 					ch <- res
 				}
 
@@ -123,14 +125,14 @@ func (t *taskInputFn[I, O, S]) Name() string {
 	return t.name
 }
 
-func (t *taskInputFn[I, O, S]) compose() error {
-	if t.f != nil && len(t.pub.channels) != 0 {
-		t.wf.inputFns = append(t.wf.inputFns, func(i I) error {
+func (t *taskInputFn[I, O, S]) Compose() error {
+	if t.f != nil && len(t.pub.Channels) != 0 {
+		t.wf.AddInputFn(func(i I) error {
 			res, err := t.f(i)
 			if err != nil {
 				return err
 			}
-			for _, ch := range t.pub.channels {
+			for _, ch := range t.pub.Channels {
 				ch <- res
 			}
 
@@ -154,11 +156,10 @@ func (t *taskOutputFn[I, O, S]) Name() string {
 func (t *taskOutputFn[I, O, R]) compose() error {
 	if t.f != nil {
 		if t.sub != nil {
-			if t.wf.outputFn != nil {
-				return fmt.Errorf("%w: error composing task %s, multiple output functions", types.ErrCompose, t.name)
-			}
-			t.wf.outputFn = func() (O, error) {
+			if ok := t.wf.SetOutputFn(func() (O, error) {
 				return t.f(<-t.sub)
+			}); !ok {
+				return fmt.Errorf("%w: error composing task %s, multiple output functions", types.ErrCompose, t.name)
 			}
 		} else {
 			return fmt.Errorf("%w: function for %s is missing input", types.ErrCompose, t.name)
