@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	composer "github.com/jalphad/gocomposer"
+	composer "github.com/jalphad/gocomposer/chain"
 	"log"
 	"strconv"
 )
