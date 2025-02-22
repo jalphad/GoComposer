@@ -6,18 +6,16 @@ import (
 	"time"
 
 	"github.com/jalphad/gocomposer/workflows"
-	"github.com/jalphad/gocomposer/workflows/internal/composer"
-	functions2 "github.com/jalphad/gocomposer/workflows/internal/functions"
 )
 
 func main() {
 	w := workflows.NewComposer[int, string]()
 	t1 := workflows.AddFn(w, ToErrFn(strconv.Itoa), nil)
-	t2 := functions2.AddFn(w, ToErrFn(IgnoreInt), nil)
-	t3 := functions2.AddBiFn(w, Combine2Strings, functions2.NewBiFnOpts(t1, t2))
-	t4 := functions2.AddFn(w, ToErrFn(DuplicateString), functions2.NewFnOpts(t3))
-	t5 := functions2.AddFn(w, ToErrFn(AddBar), functions2.NewFnOpts(t4))
-	functions2.AddFn(w, ToErrFn(AddBar), functions2.NewFnOpts(t5))
+	t2 := workflows.AddFn(w, ToErrFn(IgnoreInt), nil)
+	t3 := workflows.AddBiFn(w, Combine2Strings, t1, t2)
+	t4 := workflows.AddFn(w, ToErrFn(DuplicateString), t3)
+	t5 := workflows.AddFn(w, ToErrFn(AddBar), t4)
+	workflows.AddFn(w, ToErrFn(AddBar), t5)
 	//workflows.AddFn(w, strconv.Atoi, &workflows.FnOpts{Name: "t5", DependsOn: t3.Name()})
 	fn, err := TimeCompose(w)
 	if err != nil {
@@ -52,7 +50,7 @@ func ToErrFn[I, O any](f func(I) O) func(I) (O, error) {
 	}
 }
 
-func TimeCompose[I, O any](c composer.Composer[I, O]) (func(I) (O, error), error) {
+func TimeCompose[I, O any](c workflows.Composer[I, O]) (func(I) (O, error), error) {
 	defer timer("compose")()
 	return c.Compose()
 }
