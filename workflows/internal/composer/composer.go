@@ -15,13 +15,15 @@ func NewSimpleWorkflow[I, O any]() *SimpleWorkflow[I, O] {
 }
 
 type SimpleWorkflow[I, O any] struct {
-	Tasks        []task.Task
-	pubs         map[string]pub
-	inputFns     []func(I) error
-	transformFns []func() error
-	outputFn     func() (O, error)
-	result       func(I) (O, error)
-	errs         []error
+	Tasks         []task.Task
+	pubs          map[string]pub
+	inputFnOrder  []int
+	inputFns      []func(I) error
+	hiddenFns     []func() error
+	outputFnOrder int
+	outputFn      func() (O, error)
+	result        func(I) (O, error)
+	errs          []error
 }
 
 func (c *SimpleWorkflow[I, O]) AddTask(task task.Task) {
@@ -36,16 +38,18 @@ func (c *SimpleWorkflow[I, O]) Input() task.Dependency[I] {
 	return task.WorkflowInput[I](task.Input)
 }
 
-func (c *SimpleWorkflow[I, O]) AddInputFn(fn func(I) error) {
+func (c *SimpleWorkflow[I, O]) AddInputFn(fn func(I) error, order int) {
+	c.inputFnOrder = append(c.inputFnOrder, order)
 	c.inputFns = append(c.inputFns, fn)
 }
 
 func (c *SimpleWorkflow[I, O]) AddTransformFn(fn func() error) {
-	c.transformFns = append(c.transformFns, fn)
+	c.hiddenFns = append(c.hiddenFns, fn)
 }
 
-func (c *SimpleWorkflow[I, O]) SetOutputFn(fn func() (O, error)) bool {
+func (c *SimpleWorkflow[I, O]) SetOutputFn(fn func() (O, error), order int) bool {
 	if c.outputFn == nil {
+		c.outputFnOrder = order
 		c.outputFn = fn
 		return true
 	}
@@ -100,19 +104,33 @@ func compose[I, O any](c *SimpleWorkflow[I, O]) error {
 }
 
 func createOutputFn[I, O any](c *SimpleWorkflow[I, O]) func(I) (O, error) {
-	return func(s I) (O, error) {
+	return func(in I) (O, error) {
 		var (
 			o   O
 			err error
 		)
-		for _, consumer := range c.inputFns {
-			err = consumer(s)
+		j := 0
+		k := 0
+		for i, fn := range c.inputFns {
+			// if some functions (consumer functions) are added after the output function we need to adjust
+			// j by one to keep intended order of execution
+			if c.inputFnOrder[i] > c.outputFnOrder {
+				k = 1
+			}
+			for c.inputFnOrder[i]-j-k > i {
+				err = c.hiddenFns[j]()
+				if err != nil {
+					return o, err
+				}
+				j++
+			}
+			err = fn(in)
 			if err != nil {
 				return o, err
 			}
 		}
-		for _, intermediate := range c.transformFns {
-			err = intermediate()
+		for _, hiddenFn := range c.hiddenFns[j:] {
+			err = hiddenFn()
 			if err != nil {
 				return o, err
 			}

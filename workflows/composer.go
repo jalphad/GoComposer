@@ -2,73 +2,33 @@ package workflows
 
 import (
 	"github.com/jalphad/gocomposer/workflows/internal/composer"
-	"github.com/jalphad/gocomposer/workflows/internal/functions"
-	"github.com/jalphad/gocomposer/workflows/internal/task"
+	"github.com/jalphad/gocomposer/workflows/types"
 )
 
-type (
-	Composer[I, O any] = composer.Composer[I, O]
-)
-
-func NewComposer[I, O any]() Composer[I, O] {
+func NewComposer[I, O any]() composer.Composer[I, O] {
 	return composer.NewSimpleWorkflow[I, O]()
 }
 
-func Fn[I, O, R, S any](c composer.Composer[I, O], f func(R) (S, error)) *Function[I, O, R, S] {
-	return &Function[I, O, R, S]{
-		c: c,
-		f: f,
-	}
+func Fn[I, O, S, T any](c composer.Composer[I, O], f func(S) (T, error)) *types.Function[I, O, S, T] {
+	return types.NewFunction(c, f)
 }
 
-func BiFn[I, O, Q, R, S any](c composer.Composer[I, O], f func(Q, R) (S, error)) *BiFunction[I, O, Q, R, S] {
-	return &BiFunction[I, O, Q, R, S]{
-		c: c,
-		f: f,
-	}
+func BiFn[I, O, R, S, T any](c composer.Composer[I, O], f func(R, S) (T, error)) *types.BiFunction[I, O, R, S, T] {
+	return types.NewBiFunction(c, f)
 }
 
-type Function[I, O, R, S any] struct {
-	c composer.Composer[I, O]
-	f func(R) (S, error)
-	d task.Dependency[R]
+func TriFn[I, O, Q, R, S, T any](c composer.Composer[I, O], f func(Q, R, S) (T, error)) *types.TriFunction[I, O, Q, R, S, T] {
+	return types.NewTriFunction(c, f)
 }
 
-func (f *Function[I, O, R, S]) Param(d task.Dependency[R]) *Function[I, O, R, S] {
-	if f == nil {
-		return nil
-	}
-	f.d = d
-	return f
+func Producer[I, O, T any](c composer.Composer[I, O], f func() (T, error)) *types.Producer[I, O, T] {
+	return types.NewProducer(c, f)
 }
 
-func (f *Function[I, O, R, S]) Add() task.Dependency[S] {
-	opts := &functions.FnOpts[R]{
-		Input: f.d,
-	}
-	return functions.AddFn(f.c, f.f, opts)
+func Consumer[I, O, S any](c composer.Composer[I, O], f func(S) error) *types.Consumer[I, O, S] {
+	return types.NewConsumer(c, f)
 }
 
-type BiFunction[I, O, Q, R, S any] struct {
-	c  composer.Composer[I, O]
-	f  func(Q, R) (S, error)
-	d1 task.Dependency[Q]
-	d2 task.Dependency[R]
-}
-
-func (f *BiFunction[I, O, Q, R, S]) Params(d1 task.Dependency[Q], d2 task.Dependency[R]) *BiFunction[I, O, Q, R, S] {
-	if f == nil {
-		return nil
-	}
-	f.d1 = d1
-	f.d2 = d2
-	return f
-}
-
-func (f *BiFunction[I, O, Q, R, S]) Add() task.Dependency[S] {
-	opts := &functions.BiFnOpts[Q, R]{
-		Input1: f.d1,
-		Input2: f.d2,
-	}
-	return functions.AddBiFn(f.c, f.f, opts)
+func BiConsumer[I, O, R, S any](c composer.Composer[I, O], f func(R, S) error) *types.BiConsumer[I, O, R, S] {
+	return types.NewBiConsumer(c, f)
 }
