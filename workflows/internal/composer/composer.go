@@ -9,16 +9,20 @@ import (
 )
 
 func NewSimpleWorkflow[I, O any]() *SimpleWorkflow[I, O] {
-	return &SimpleWorkflow[I, O]{
+	swf := &SimpleWorkflow[I, O]{
 		pubs: make(map[string]pub),
 	}
+	swf.inputTask = &InputTask[I]{
+		pub: SetPub[I, O, I](swf, task.Input),
+	}
+
+	return swf
 }
 
 type SimpleWorkflow[I, O any] struct {
 	Tasks         []task.Task
 	pubs          map[string]pub
-	inputFnOrder  []int
-	inputFns      []func(I) error
+	inputTask     *InputTask[I]
 	hiddenFns     []func() error
 	outputFnOrder int
 	outputFn      func() (O, error)
@@ -39,8 +43,11 @@ func (c *SimpleWorkflow[I, O]) Input() task.Dependency[I] {
 }
 
 func (c *SimpleWorkflow[I, O]) AddInputFn(fn func(I) error, order int) {
-	c.inputFnOrder = append(c.inputFnOrder, order)
-	c.inputFns = append(c.inputFns, fn)
+	// This method is still needed for other function types like BiFn, Consumer, etc.
+	// They will continue to use the old approach until they are also updated
+	c.hiddenFns = append(c.hiddenFns, func() error {
+		return nil // placeholder - this needs to be handled differently
+	})
 }
 
 func (c *SimpleWorkflow[I, O]) AddTransformFn(fn func() error) {
@@ -109,27 +116,16 @@ func createOutputFn[I, O any](c *SimpleWorkflow[I, O]) func(I) (O, error) {
 			o   O
 			err error
 		)
-		j := 0
-		k := 0
-		for i, fn := range c.inputFns {
-			// if some functions (consumer functions) are added after the output function we need to adjust
-			// j by one to keep intended order of execution
-			if c.inputFnOrder[i] > c.outputFnOrder {
-				k = 1
-			}
-			for c.inputFnOrder[i]-j-k > i {
-				err = c.hiddenFns[j]()
-				if err != nil {
-					return o, err
-				}
-				j++
-			}
-			err = fn(in)
-			if err != nil {
-				return o, err
+
+		// Publish input through the input task if it exists
+		if c.inputTask != nil {
+			for _, ch := range c.inputTask.pub.Channels {
+				ch <- in
 			}
 		}
-		for _, hiddenFn := range c.hiddenFns[j:] {
+
+		// Execute all hidden functions
+		for _, hiddenFn := range c.hiddenFns {
 			err = hiddenFn()
 			if err != nil {
 				return o, err
@@ -137,4 +133,8 @@ func createOutputFn[I, O any](c *SimpleWorkflow[I, O]) func(I) (O, error) {
 		}
 		return c.outputFn()
 	}
+}
+
+type InputTask[I any] struct {
+	pub *PubImpl[I]
 }

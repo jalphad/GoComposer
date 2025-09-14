@@ -11,42 +11,7 @@ import (
 func AddBiConsumer[I, O, R, S any](c composer.Composer[I, O], f func(R, S) error, opts *BiConsmrOpts[R, S]) {
 	swf := c.(*composer.SimpleWorkflow[I, O])
 	opts = setBiConsmrOpts(swf, opts)
-	if _, ok := opts.Input1.(task.WorkflowInput[R]); ok {
-		this := &taskInputFirstBiConsumer[I, O, S]{
-			taskBase: taskBase[I, O, I]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(I, S) error); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) error
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
-		swf.AddTask(this)
 
-		return
-	}
-	if _, ok := opts.Input2.(task.WorkflowInput[S]); ok {
-		this := &taskInputSecondBiConsumer[I, O, R]{
-			taskBase: taskBase[I, O, I]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(R, I) error); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) error
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
-		swf.AddTask(this)
-
-		return
-	}
 	this := &taskBiConsumer[I, O, R, S]{
 		taskBase: taskBase[I, O, I]{
 			wf:    swf,
@@ -62,8 +27,6 @@ func AddBiConsumer[I, O, R, S any](c composer.Composer[I, O], f func(R, S) error
 	composer.AddSub(swf, opts.Input2.Name(), sub2Ch)
 	this.sub2 = sub2Ch
 	swf.AddTask(this)
-
-	return
 }
 
 type BiConsmrOpts[R, S any] struct {
@@ -77,13 +40,10 @@ func setBiConsmrOpts[I, O, R, S any](c *composer.SimpleWorkflow[I, O], o *BiCons
 	if o == nil {
 		return &BiConsmrOpts[R, S]{
 			Name:   fmt.Sprintf("Task%d", len(c.Tasks)+1),
-			Input1: nil,
-			Input2: nil,
+			Input1: task.WorkflowInput[R](task.Input),
+			Input2: task.WorkflowInput[S](task.Input),
 			order:  len(c.Tasks),
 		}
-	}
-	if o.Name == "" {
-		o.Name = fmt.Sprintf("Task%d", len(c.Tasks)+1)
 	}
 	if o.Input1 == nil {
 		o.Input1 = task.WorkflowInput[R](task.Input)
@@ -91,8 +51,10 @@ func setBiConsmrOpts[I, O, R, S any](c *composer.SimpleWorkflow[I, O], o *BiCons
 	if o.Input2 == nil {
 		o.Input2 = task.WorkflowInput[S](task.Input)
 	}
+	if o.Name == "" {
+		o.Name = fmt.Sprintf("Task%d", len(c.Tasks)+1)
+	}
 	o.order = len(c.Tasks)
-
 	return o
 }
 
@@ -109,7 +71,7 @@ func (t *taskBiConsumer[I, O, R, S]) Name() string {
 
 func (t *taskBiConsumer[I, O, R, S]) Compose() error {
 	if t.f != nil {
-		if t.sub1 != nil {
+		if t.sub1 != nil && t.sub2 != nil {
 			t.wf.AddTransformFn(func() error {
 				err := t.f(<-t.sub1, <-t.sub2)
 				if err != nil {
@@ -129,53 +91,3 @@ func (t *taskBiConsumer[I, O, R, S]) Compose() error {
 }
 
 func (t *taskBiConsumer[I, O, R, S]) isDependency() {}
-
-type taskInputFirstBiConsumer[I, O, S any] taskBiConsumer[I, O, I, S]
-
-func (t *taskInputFirstBiConsumer[I, O, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputFirstBiConsumer[I, O, S]) Compose() error {
-	if t.f != nil {
-		t.wf.AddInputFn(func(i I) error {
-			err := t.f(i, <-t.sub2)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputFirstBiConsumer[I, O, S]) isDependency() {}
-
-type taskInputSecondBiConsumer[I, O, R any] taskBiConsumer[I, O, R, I]
-
-func (t *taskInputSecondBiConsumer[I, O, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputSecondBiConsumer[I, O, S]) Compose() error {
-	if t.f != nil {
-		t.wf.AddInputFn(func(i I) error {
-			err := t.f(<-t.sub1, i)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputSecondBiConsumer[I, O, S]) isDependency() {}

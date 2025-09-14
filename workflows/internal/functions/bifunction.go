@@ -11,45 +11,7 @@ import (
 func AddBiFn[I, O, Q, R, S any](c composer.Composer[I, O], f func(Q, R) (S, error), opts *BiFnOpts[Q, R]) task.Dependency[S] {
 	swf := c.(*composer.SimpleWorkflow[I, O])
 	opts = setBiFnOpts(swf, opts)
-	if _, ok := opts.Input1.(task.WorkflowInput[Q]); ok {
-		this := &taskInputFirstBiFn[I, O, R, S]{
-			taskBase: taskBase[I, O, S]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(I, R) (S, error)); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) S
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
 
-		this.pub = composer.SetPub[I, O, S](swf, opts.Name)
-		swf.AddTask(this)
-
-		return (&task.TaskDependency[S]{}).SetName(this.name)
-	} else if _, ok := opts.Input2.(task.WorkflowInput[R]); ok {
-		this := &taskInputSecondBiFn[I, O, Q, S]{
-			taskBase: taskBase[I, O, S]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(Q, I) (S, error)); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) S
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
-
-		this.pub = composer.SetPub[I, O, S](swf, opts.Name)
-		swf.AddTask(this)
-
-		return (&task.TaskDependency[S]{}).SetName(this.name)
-	}
 	this := &taskBiFn[I, O, Q, R, S]{
 		taskBase: taskBase[I, O, S]{
 			wf:    swf,
@@ -81,13 +43,15 @@ func setBiFnOpts[I, O, Q, R any](c *composer.SimpleWorkflow[I, O], o *BiFnOpts[Q
 	if o == nil {
 		return &BiFnOpts[Q, R]{
 			Name:   fmt.Sprintf("Task%d", len(c.Tasks)+1),
-			Input1: nil,
-			Input2: nil,
+			Input1: task.WorkflowInput[Q](task.Input),
+			Input2: task.WorkflowInput[R](task.Input),
 			order:  len(c.Tasks),
 		}
-	} else if o.Input1 == nil {
+	}
+	if o.Input1 == nil {
 		o.Input1 = task.WorkflowInput[Q](task.Input)
-	} else if o.Input2 == nil {
+	}
+	if o.Input2 == nil {
 		o.Input2 = task.WorkflowInput[R](task.Input)
 	}
 	if o.Name == "" {
@@ -156,61 +120,6 @@ func (t *taskBiFn[I, O, Q, R, S]) toOutputBiFn() (*taskOutputBiFn[I, O, Q, R], b
 	}, true
 }
 
-type taskInputFirstBiFn[I, O, R, S any] taskBiFn[I, O, I, R, S]
-
-func (t *taskInputFirstBiFn[I, O, R, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputFirstBiFn[I, O, R, S]) Compose() error {
-	if t.f != nil && len(t.pub.Channels) != 0 {
-		t.wf.AddInputFn(func(i I) error {
-			res, err := t.f(i, <-t.sub2)
-			if err != nil {
-				return err
-			}
-			for _, ch := range t.pub.Channels {
-				ch <- res
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputFirstBiFn[I, O, R, S]) isDependency() {}
-
-type taskInputSecondBiFn[I, O, Q, S any] taskBiFn[I, O, Q, I, S]
-
-func (t *taskInputSecondBiFn[I, O, R, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputSecondBiFn[I, O, R, S]) Compose() error {
-	if t.f != nil && len(t.pub.Channels) != 0 {
-		t.wf.AddInputFn(func(i I) error {
-			res, err := t.f(<-t.sub1, i)
-			if err != nil {
-				return err
-			}
-			for _, ch := range t.pub.Channels {
-				ch <- res
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputSecondBiFn[I, O, R, S]) isDependency() {}
 
 type taskOutputBiFn[I, O, Q, R any] taskBiFn[I, O, Q, R, O]
 

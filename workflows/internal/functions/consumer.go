@@ -11,24 +11,7 @@ import (
 func AddConsumer[I, O, R any](c composer.Composer[I, O], f func(R) error, opts *ConsmrOpts[R]) {
 	swf := c.(*composer.SimpleWorkflow[I, O])
 	opts = setConsmrOpts(swf, opts)
-	if _, ok := opts.Input.(task.WorkflowInput[R]); ok {
-		this := &taskInputConsumer[I, O, I]{
-			taskBase: taskBase[I, O, I]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(I) error); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) error
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
-		swf.AddTask(this)
 
-		return
-	}
 	this := &taskConsumer[I, O, R]{
 		taskBase: taskBase[I, O, I]{
 			wf:    swf,
@@ -41,8 +24,6 @@ func AddConsumer[I, O, R any](c composer.Composer[I, O], f func(R) error, opts *
 	composer.AddSub(swf, opts.Input.Name(), subCh)
 	this.sub = subCh
 	swf.AddTask(this)
-
-	return
 }
 
 type ConsmrOpts[R any] struct {
@@ -59,14 +40,13 @@ func setConsmrOpts[I, O, R any](c *composer.SimpleWorkflow[I, O], o *ConsmrOpts[
 			order: len(c.Tasks),
 		}
 	}
-	if o.Name == "" {
-		o.Name = fmt.Sprintf("Task%d", len(c.Tasks)+1)
-	}
 	if o.Input == nil {
 		o.Input = task.WorkflowInput[R](task.Input)
 	}
+	if o.Name == "" {
+		o.Name = fmt.Sprintf("Task%d", len(c.Tasks)+1)
+	}
 	o.order = len(c.Tasks)
-
 	return o
 }
 
@@ -102,28 +82,3 @@ func (t *taskConsumer[I, O, R]) Compose() error {
 }
 
 func (t *taskConsumer[I, O, R]) isDependency() {}
-
-type taskInputConsumer[I, O, S any] taskConsumer[I, O, I]
-
-func (t *taskInputConsumer[I, O, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputConsumer[I, O, S]) Compose() error {
-	if t.f != nil {
-		t.wf.AddInputFn(func(i I) error {
-			err := t.f(i)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputConsumer[I, O, S]) isDependency() {}

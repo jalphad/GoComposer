@@ -11,25 +11,7 @@ import (
 func AddFn[I, O, R, S any](c composer.Composer[I, O], f func(R) (S, error), opts *FnOpts[R]) task.Dependency[S] {
 	swf := c.(*composer.SimpleWorkflow[I, O])
 	opts = setOpts(swf, opts)
-	if _, ok := opts.Input.(task.WorkflowInput[R]); ok {
-		this := &taskInputFn[I, O, S]{
-			taskBase: taskBase[I, O, S]{
-				wf:    swf,
-				name:  opts.Name,
-				order: opts.order,
-			},
-		}
-		if fi, ok := any(f).(func(I) (S, error)); ok {
-			this.f = fi
-		} else {
-			var dummy func(I) S
-			swf.AddErr(fmt.Errorf("%w: function was not of expected type, expected %T, got %T", types.ErrCompose, dummy, f))
-		}
-		this.pub = composer.SetPub[I, O, S](swf, opts.Name)
-		swf.AddTask(this)
 
-		return (&task.TaskDependency[S]{}).SetName(this.name)
-	}
 	this := &taskFn[I, O, R, S]{
 		taskBase: taskBase[I, O, S]{
 			wf:    swf,
@@ -127,34 +109,6 @@ func (t *taskFn[I, O, R, S]) toOutputFn() (*taskOutputFn[I, O, R], bool) {
 		sub: t.sub,
 	}, true
 }
-
-type taskInputFn[I, O, S any] taskFn[I, O, I, S]
-
-func (t *taskInputFn[I, O, S]) Name() string {
-	return t.name
-}
-
-func (t *taskInputFn[I, O, S]) Compose() error {
-	if t.f != nil && len(t.pub.Channels) != 0 {
-		t.wf.AddInputFn(func(i I) error {
-			res, err := t.f(i)
-			if err != nil {
-				return err
-			}
-			for _, ch := range t.pub.Channels {
-				ch <- res
-			}
-
-			return nil
-		}, t.order)
-	} else {
-		return fmt.Errorf("%w: function for %s is nil or output is not used", types.ErrCompose, t.name)
-	}
-
-	return nil
-}
-
-func (t *taskInputFn[I, O, S]) isDependency() {}
 
 type taskOutputFn[I, O, R any] taskFn[I, O, R, O]
 

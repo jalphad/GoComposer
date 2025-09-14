@@ -68,7 +68,7 @@ func (t *taskProducer[I, O, S]) Compose() error {
 				return nil
 			})
 		} else if to, ok := t.toOutputFn(); ok {
-			err := to.compose()
+			err := to.Compose()
 			if err != nil {
 				return err
 			}
@@ -105,7 +105,7 @@ func (t *taskOutputProducer[I, O, S]) Name() string {
 	return t.name
 }
 
-func (t *taskOutputProducer[I, O, R]) compose() error {
+func (t *taskOutputProducer[I, O, R]) Compose() error {
 	if t.f != nil {
 		if ok := t.wf.SetOutputFn(func() (O, error) {
 			return t.f()
